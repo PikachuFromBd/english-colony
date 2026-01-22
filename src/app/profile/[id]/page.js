@@ -56,7 +56,7 @@ export default function PublicProfilePage() {
 
     useEffect(() => {
         fetchProfile()
-    }, [userId])
+    }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
     const fetchProfile = async () => {
         try {

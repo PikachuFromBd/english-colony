@@ -58,7 +58,7 @@ export default function VideoPlayerPage() {
 
         // Fetch comments from database
         fetchComments()
-    }, [videoId])
+    }, [videoId]) // eslint-disable-line react-hooks/exhaustive-deps
 
     const fetchVotes = async (authToken) => {
         try {
