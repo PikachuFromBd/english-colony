@@ -3,6 +3,7 @@ import { getUserFromRequest } from '@/lib/auth'
 import { dbConnect } from '@/lib/db'
 import Vote from '@/models/Vote'
 import { logError } from '@/lib/logger'
+import mongoose from 'mongoose'
 
 export async function GET(request) {
     try {
@@ -13,8 +14,11 @@ export async function GET(request) {
             return NextResponse.json({ votes: [] })
         }
 
+        // Convert string ID to ObjectId for Mongoose query
+        const userId = new mongoose.Types.ObjectId(user.id)
+
         // Find videos the user has voted for
-        const votes = await Vote.find({ user: user.id })
+        const votes = await Vote.find({ user: userId })
 
         return NextResponse.json({
             votes: votes.map(v => v.video_id)
@@ -48,9 +52,12 @@ export async function POST(request) {
             )
         }
 
+        // Convert string ID to ObjectId for Mongoose
+        const userId = new mongoose.Types.ObjectId(user.id)
+
         // Check if already voted
         const existingVote = await Vote.findOne({
-            user: user.id,
+            user: userId,
             video_id: parseInt(videoId)
         })
 
@@ -63,7 +70,7 @@ export async function POST(request) {
 
         // Create vote
         await Vote.create({
-            user: user.id,
+            user: userId,
             video_id: parseInt(videoId)
         })
 

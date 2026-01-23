@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Heart, MessageCircle, ChevronDown, ChevronUp, Send, ArrowLeft, Home } from 'lucide-react'
+import { Heart, MessageCircle, ChevronDown, ChevronUp, Send, ArrowLeft, Trash2, Settings } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useParams } from 'next/navigation'
 import Header from '@/components/Header'
@@ -12,20 +12,38 @@ const videosData = [
     {
         id: 1,
         title: '16th Batch Promo',
-        description: 'Amazing promo video from 16th batch students showcasing their creativity and English skills. This video represents the spirit of English Colony - a place where students come together to learn, grow, and have fun while improving their language skills. Watch as our talented students demonstrate their passion for English through creative storytelling and engaging visuals.',
-        filename: '16th promo.mp4',
+        description: '',
+        url: 'https://shahadathassan.cyou/videos/16th%20promo.mp4',
+        m3u8Url: 'https://shahadathassan.cyou/videos/m3u8/16th%20promo/index.m3u8',
     },
     {
         id: 2,
-        title: 'Creative Vision',
-        description: 'A unique perspective on what English Colony means to us. This video captures the essence of our community - the friendships, the learning moments, and the memories we create together. Each frame tells a story of growth and connection.',
-        filename: 'IMG_0399.MOV',
+        title: '18th Batch Promo',
+        description: `What is going to happen on January 31? 🤯
+
+Director: Ibtisam Alam Pial
+
+Cast:
+Rayhan Omi, Ibtisam Alam Pial, Raiyan Noor Talha, Farzana Sultana Khan, Shamsul Arafin Rafi, Shahmita Alam Yeana, Shuvojit Chakroborty, Sadia Tabassum Sriti, Raisul Islam
+
+Cinematography: Ibtisam Alam Pial, Raiyan Noor Talha, Arko Islam Saim
+GFX: Shamsul Arafin Rafi
+VFX: Ibtisam Alam Pial
+Voiceover: Farzana Sultana Khan
+Editor: Ibtisam Alam Pial
+
+Special Thanks to Najmul Huda Sir
+
+Presented by: 18th Batch | Department of English | University of Scholars`,
+        url: 'https://shahadathassan.cyou/videos/IMG_0399.MOV',
+        m3u8Url: 'https://shahadathassan.cyou/videos/m3u8/IMG_0399/index.m3u8',
     },
     {
         id: 3,
-        title: 'Our Journey',
-        description: 'Capturing the spirit of learning and growth at English Colony. Follow along as we showcase the incredible journey of our members - from shy beginners to confident English speakers. This is what English Colony is all about!',
-        filename: 'IMG_3237.MP4',
+        title: '17th Batch Promo',
+        description: 'This is simply Dramatic... This is innovative.',
+        url: 'https://shahadathassan.cyou/videos/IMG_3237.MP4',
+        m3u8Url: 'https://shahadathassan.cyou/videos/m3u8/IMG_3237/index.m3u8',
     },
 ]
 
@@ -34,6 +52,7 @@ export default function VideoPlayerPage() {
     const videoId = parseInt(params.id)
     const video = videosData.find(v => v.id === videoId) || videosData[0]
     const videoRef = useRef(null)
+    const hlsRef = useRef(null)
 
     const router = useRouter()
     const { showToast } = useToast()
@@ -42,10 +61,28 @@ export default function VideoPlayerPage() {
     const [voteCount, setVoteCount] = useState(0)
     const [isLoggedIn, setIsLoggedIn] = useState(false)
     const [token, setToken] = useState(null)
+    const [currentUserId, setCurrentUserId] = useState(null)
     const [comments, setComments] = useState([])
     const [newComment, setNewComment] = useState('')
     const [loading, setLoading] = useState(true)
     const [voteLoading, setVoteLoading] = useState(false)
+    const [quality, setQuality] = useState('hd') // 'hd' or 'low'
+    const [showQualityMenu, setShowQualityMenu] = useState(false)
+    const [hlsSupported, setHlsSupported] = useState(false)
+
+    // Parse JWT to get user ID
+    const parseJwt = (token) => {
+        try {
+            const base64Url = token.split('.')[1]
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function (c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+            }).join(''))
+            return JSON.parse(jsonPayload)
+        } catch (e) {
+            return null
+        }
+    }
 
     // Fetch real data from database
     useEffect(() => {
@@ -53,12 +90,85 @@ export default function VideoPlayerPage() {
         setToken(storedToken)
         setIsLoggedIn(!!storedToken)
 
+        if (storedToken) {
+            const decoded = parseJwt(storedToken)
+            if (decoded && decoded.id) {
+                setCurrentUserId(decoded.id)
+            }
+        }
+
         // Fetch video votes
         fetchVotes(storedToken)
 
         // Fetch comments from database
         fetchComments()
     }, [videoId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Initialize video player and check HLS support
+    useEffect(() => {
+        const videoElement = videoRef.current
+        if (!videoElement) return
+
+        // Destroy existing HLS instance
+        if (hlsRef.current) {
+            hlsRef.current.destroy()
+            hlsRef.current = null
+        }
+
+        const loadVideo = async () => {
+            if (quality === 'low') {
+                // Dynamic import of HLS.js
+                try {
+                    const Hls = (await import('hls.js')).default
+
+                    if (Hls.isSupported()) {
+                        setHlsSupported(true)
+                        const hls = new Hls({
+                            enableWorker: true,
+                            lowLatencyMode: true,
+                        })
+                        hlsRef.current = hls
+                        hls.loadSource(video.m3u8Url)
+                        hls.attachMedia(videoElement)
+
+                        hls.on(Hls.Events.ERROR, (event, data) => {
+                            console.error('HLS Error:', data)
+                            if (data.fatal) {
+                                // Fallback to HD on fatal error (like CORS)
+                                setQuality('hd')
+                                showToast('Low quality unavailable (CORS), using HD', 'info')
+                            }
+                        })
+                    } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+                        // Native HLS support (Safari)
+                        setHlsSupported(true)
+                        videoElement.src = video.m3u8Url
+                    } else {
+                        // HLS not supported
+                        setHlsSupported(false)
+                        setQuality('hd')
+                        videoElement.src = video.url
+                    }
+                } catch (error) {
+                    console.error('Failed to load HLS:', error)
+                    setQuality('hd')
+                    videoElement.src = video.url
+                }
+            } else {
+                // Direct MP4
+                videoElement.src = video.url
+            }
+        }
+
+        loadVideo()
+
+        return () => {
+            if (hlsRef.current) {
+                hlsRef.current.destroy()
+                hlsRef.current = null
+            }
+        }
+    }, [quality, video.url, video.m3u8Url]) // eslint-disable-line react-hooks/exhaustive-deps
 
     const fetchVotes = async (authToken) => {
         try {
@@ -130,6 +240,7 @@ export default function VideoPlayerPage() {
                 showToast(data.message || 'Failed to vote', 'error')
             }
         } catch (error) {
+            console.error('Vote error:', error)
             showToast('Failed to vote. Please try again.', 'error')
         } finally {
             setVoteLoading(false)
@@ -165,24 +276,37 @@ export default function VideoPlayerPage() {
                 showToast(data.message || 'Failed to add comment', 'error')
             }
         } catch (error) {
+            console.error('Comment error:', error)
             showToast('Failed to add comment. Please try again.', 'error')
         }
     }
 
-    const shortDescription = video.description.slice(0, 100) + '...'
+    const handleDeleteComment = async (commentId) => {
+        if (!confirm('Are you sure you want to delete this comment?')) return
 
-    // Get file extension to determine video type
-    const getVideoType = (filename) => {
-        const ext = filename.split('.').pop().toLowerCase()
-        const types = {
-            'mp4': 'video/mp4',
-            'mov': 'video/quicktime',
-            'webm': 'video/webm',
-            'ogg': 'video/ogg',
-            'm4v': 'video/mp4'
+        try {
+            const res = await fetch(`/api/comments?commentId=${commentId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+
+            const data = await res.json()
+
+            if (res.ok) {
+                setComments(prev => prev.filter(c => c.id !== commentId))
+                showToast('Comment deleted!', 'success')
+            } else {
+                showToast(data.message || 'Failed to delete comment', 'error')
+            }
+        } catch (error) {
+            console.error('Delete comment error:', error)
+            showToast('Failed to delete comment. Please try again.', 'error')
         }
-        return types[ext] || 'video/mp4'
     }
+
+    const shortDescription = video.description ? video.description.slice(0, 100) + (video.description.length > 100 ? '...' : '') : 'No description available.'
 
     return (
         <div className="min-h-screen flex flex-col">
@@ -212,12 +336,37 @@ export default function VideoPlayerPage() {
                         className="w-full h-full object-contain"
                         style={{ backgroundColor: '#000' }}
                     >
-                        <source
-                            src={`/videos/${video.filename}`}
-                            type={getVideoType(video.filename)}
-                        />
                         Your browser does not support the video tag.
                     </video>
+
+                    {/* Quality Selector */}
+                    <div className="absolute top-3 right-3 z-10">
+                        <button
+                            onClick={() => setShowQualityMenu(!showQualityMenu)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-black/70 text-white text-sm hover:bg-black/90 transition-colors"
+                        >
+                            <Settings className="w-4 h-4" />
+                            <span>{quality === 'hd' ? 'HD' : 'Low'}</span>
+                        </button>
+
+                        {showQualityMenu && (
+                            <div className="absolute top-full right-0 mt-1 bg-black/90 rounded-lg overflow-hidden min-w-[100px]">
+                                <button
+                                    onClick={() => { setQuality('hd'); setShowQualityMenu(false) }}
+                                    className={`w-full px-4 py-2 text-left text-sm hover:bg-white/10 transition-colors ${quality === 'hd' ? 'text-primary-400' : 'text-white'}`}
+                                >
+                                    HD (Original)
+                                </button>
+                                <button
+                                    onClick={() => { setQuality('low'); setShowQualityMenu(false) }}
+                                    className={`w-full px-4 py-2 text-left text-sm hover:bg-white/10 transition-colors ${quality === 'low' ? 'text-primary-400' : 'text-white'}`}
+                                    title={!hlsSupported ? 'Low quality requires CORS headers on server' : ''}
+                                >
+                                    Low (Faster)
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Description */}
@@ -226,16 +375,18 @@ export default function VideoPlayerPage() {
                         className="glass rounded-xl p-4 cursor-pointer"
                         onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
                     >
-                        <p className="text-primary-200/80 text-sm leading-relaxed">
-                            {isDescriptionExpanded ? video.description : shortDescription}
+                        <p className="text-primary-200/80 text-sm leading-relaxed whitespace-pre-line">
+                            {isDescriptionExpanded ? video.description || 'No description available.' : shortDescription}
                         </p>
-                        <button className="flex items-center gap-1 text-primary-400 text-sm mt-2 hover:text-primary-300">
-                            {isDescriptionExpanded ? (
-                                <>Show less <ChevronUp className="w-4 h-4" /></>
-                            ) : (
-                                <>Show more <ChevronDown className="w-4 h-4" /></>
-                            )}
-                        </button>
+                        {video.description && video.description.length > 100 && (
+                            <button className="flex items-center gap-1 text-primary-400 text-sm mt-2 hover:text-primary-300">
+                                {isDescriptionExpanded ? (
+                                    <>Show less <ChevronUp className="w-4 h-4" /></>
+                                ) : (
+                                    <>Show more <ChevronDown className="w-4 h-4" /></>
+                                )}
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -308,14 +459,26 @@ export default function VideoPlayerPage() {
                             comments.map((comment) => (
                                 <div key={comment.id} className="glass rounded-xl p-4">
                                     <div className="flex items-center justify-between mb-2">
-                                        {/* Clickable username linking to profile */}
-                                        <Link
-                                            href={`/profile/${comment.userId || 1}`}
-                                            className="font-medium text-primary-300 hover:text-primary-200 transition-colors"
-                                        >
-                                            {comment.user}
-                                        </Link>
-                                        <span className="text-xs text-primary-400/60">{comment.time}</span>
+                                        <div className="flex items-center gap-2">
+                                            {/* Clickable username linking to profile */}
+                                            <Link
+                                                href={`/profile/${comment.userId || 1}`}
+                                                className="font-medium text-primary-300 hover:text-primary-200 transition-colors"
+                                            >
+                                                {comment.user}
+                                            </Link>
+                                            <span className="text-xs text-primary-400/60">{comment.time}</span>
+                                        </div>
+                                        {/* Delete button - only show for comment owner */}
+                                        {currentUserId && comment.userId === currentUserId && (
+                                            <button
+                                                onClick={() => handleDeleteComment(comment.id)}
+                                                className="p-1.5 rounded-lg hover:bg-red-500/20 text-primary-400 hover:text-red-400 transition-colors"
+                                                title="Delete comment"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        )}
                                     </div>
                                     <p className="text-primary-200/80 text-sm">{comment.text}</p>
                                 </div>

@@ -4,6 +4,7 @@ import { dbConnect } from '@/lib/db'
 import Comment from '@/models/Comment'
 import User from '@/models/User'
 import { logError } from '@/lib/logger'
+import mongoose from 'mongoose'
 
 export async function GET(request) {
     try {
@@ -59,9 +60,12 @@ export async function POST(request) {
             )
         }
 
+        // Convert string ID to ObjectId for Mongoose
+        const userId = new mongoose.Types.ObjectId(user.id)
+
         // Create comment
         const newComment = await Comment.create({
-            user: user.id, // Auth middleware returns decoded token with id
+            user: userId,
             video_id: parseInt(videoId),
             content
         })
@@ -85,6 +89,62 @@ export async function POST(request) {
         logError('Comments API POST Error', error)
         return NextResponse.json(
             { message: 'Failed to add comment' },
+            { status: 500 }
+        )
+    }
+}
+
+export async function DELETE(request) {
+    try {
+        await dbConnect()
+        const user = getUserFromRequest(request)
+        if (!user) {
+            return NextResponse.json(
+                { message: 'Not authenticated' },
+                { status: 401 }
+            )
+        }
+
+        const { searchParams } = new URL(request.url)
+        const commentId = searchParams.get('commentId')
+
+        if (!commentId) {
+            return NextResponse.json(
+                { message: 'Comment ID is required' },
+                { status: 400 }
+            )
+        }
+
+        // Find the comment
+        const comment = await Comment.findById(commentId)
+
+        if (!comment) {
+            return NextResponse.json(
+                { message: 'Comment not found' },
+                { status: 404 }
+            )
+        }
+
+        // Check if user owns this comment
+        if (comment.user.toString() !== user.id) {
+            return NextResponse.json(
+                { message: 'You can only delete your own comments' },
+                { status: 403 }
+            )
+        }
+
+        // Delete the comment
+        await Comment.findByIdAndDelete(commentId)
+
+        return NextResponse.json({
+            message: 'Comment deleted successfully'
+        })
+
+    } catch (error) {
+        console.error('Comment delete error:', error)
+        logError('Comments API DELETE Error', error)
+        return NextResponse.json(
+            { message: 'Failed to delete comment' },
             { status: 500 }
         )
     }

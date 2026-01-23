@@ -11,6 +11,10 @@ export async function GET(request, { params }) {
         await dbConnect()
         const userId = params.id
 
+        // Check if viewing user is the profile owner
+        const viewingUser = getUserFromRequest(request)
+        const isOwner = viewingUser && viewingUser.id === userId
+
         // Fetch user from database
         const user = await User.findById(userId)
 
@@ -21,6 +25,18 @@ export async function GET(request, { params }) {
             )
         }
 
+        // Mask phone number for non-owners
+        let displayContact = user.contact
+        if (user.contact && !isOwner) {
+            // Show only last 4 digits, mask the rest with asterisks
+            const contact = user.contact.toString()
+            if (contact.length > 4) {
+                displayContact = '*'.repeat(contact.length - 4) + contact.slice(-4)
+            } else {
+                displayContact = '****'
+            }
+        }
+
         return NextResponse.json({
             user: {
                 id: user._id.toString(),
@@ -28,7 +44,7 @@ export async function GET(request, { params }) {
                 profileImage: user.profile_image,
                 batchNumber: user.batch_number,
                 batchType: user.batch_type,
-                contact: user.contact,
+                contact: displayContact,
                 bloodGroup: user.blood_group,
                 address: user.address,
                 socialLinks: user.social_links || [], // Already an array in Mongoose

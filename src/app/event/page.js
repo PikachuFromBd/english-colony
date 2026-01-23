@@ -11,22 +11,22 @@ const fallbackVideos = [
     {
         id: 1,
         title: '16th Batch Promo',
-        description: 'Amazing promo video from 16th batch students.',
-        filename: '16th promo.mp4',
+        description: '',
+        url: 'https://shahadathassan.cyou/videos/16th%20promo.mp4',
         votes: 0,
     },
     {
         id: 2,
-        title: 'Creative Vision',
-        description: 'A unique perspective on what English Colony means to us.',
-        filename: 'IMG_0399.MOV',
+        title: '18th Batch Promo',
+        description: 'What is going to happen on January 31? 🤯',
+        url: 'https://shahadathassan.cyou/videos/IMG_0399.MOV',
         votes: 0,
     },
     {
         id: 3,
-        title: 'Our Journey',
-        description: 'Capturing the spirit of learning and growth.',
-        filename: 'IMG_3237.MP4',
+        title: '17th Batch Promo',
+        description: 'This is simply Dramatic... This is innovative.',
+        url: 'https://shahadathassan.cyou/videos/IMG_3237.MP4',
         votes: 0,
     },
 ]
@@ -103,7 +103,7 @@ export default function EventPage() {
                                     <div className="relative aspect-video bg-primary-900/50">
                                         {/* Video poster/thumbnail */}
                                         <video
-                                            src={`/videos/${video.filename}`}
+                                            src={video.url}
                                             className="w-full h-full object-cover"
                                             preload="metadata"
                                             muted
