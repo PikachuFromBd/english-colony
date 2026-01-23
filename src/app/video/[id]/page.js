@@ -14,7 +14,7 @@ const videosData = [
         title: '16th Batch Promo',
         description: '',
         url: 'https://shahadathassan.cyou/videos/16th%20promo.mp4',
-        m3u8Url: 'https://shahadathassan.cyou/videos/m3u8/16th%20promo/index.m3u8',
+        m3u8Proxy: '/api/hls-proxy?video=16th%20promo',
     },
     {
         id: 2,
@@ -36,14 +36,14 @@ Special Thanks to Najmul Huda Sir
 
 Presented by: 18th Batch | Department of English | University of Scholars`,
         url: 'https://shahadathassan.cyou/videos/IMG_0399.MOV',
-        m3u8Url: 'https://shahadathassan.cyou/videos/m3u8/IMG_0399/index.m3u8',
+        m3u8Proxy: '/api/hls-proxy?video=IMG_0399',
     },
     {
         id: 3,
         title: '17th Batch Promo',
         description: 'This is simply Dramatic... This is innovative.',
         url: 'https://shahadathassan.cyou/videos/IMG_3237.MP4',
-        m3u8Url: 'https://shahadathassan.cyou/videos/m3u8/IMG_3237/index.m3u8',
+        m3u8Proxy: '/api/hls-proxy?video=IMG_3237',
     },
 ]
 
@@ -128,7 +128,7 @@ export default function VideoPlayerPage() {
                             lowLatencyMode: true,
                         })
                         hlsRef.current = hls
-                        hls.loadSource(video.m3u8Url)
+                        hls.loadSource(video.m3u8Proxy)
                         hls.attachMedia(videoElement)
 
                         hls.on(Hls.Events.ERROR, (event, data) => {
@@ -142,7 +142,7 @@ export default function VideoPlayerPage() {
                     } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
                         // Native HLS support (Safari)
                         setHlsSupported(true)
-                        videoElement.src = video.m3u8Url
+                        videoElement.src = video.m3u8Proxy
                     } else {
                         // HLS not supported
                         setHlsSupported(false)
@@ -168,7 +168,7 @@ export default function VideoPlayerPage() {
                 hlsRef.current = null
             }
         }
-    }, [quality, video.url, video.m3u8Url]) // eslint-disable-line react-hooks/exhaustive-deps
+    }, [quality, video.url, video.m3u8Proxy]) // eslint-disable-line react-hooks/exhaustive-deps
 
     const fetchVotes = async (authToken) => {
         try {

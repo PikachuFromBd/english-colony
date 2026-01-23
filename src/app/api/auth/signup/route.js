@@ -5,6 +5,9 @@ import User from '@/models/User'
 import IPTracking from '@/models/IPTracking'
 import { logError } from '@/lib/logger'
 
+// Maximum accounts allowed per IP
+const MAX_ACCOUNTS_PER_IP = 2
+
 export async function POST(request) {
     try {
         await dbConnect()
@@ -16,6 +19,20 @@ export async function POST(request) {
             return NextResponse.json(
                 { message: 'Name, email, and password are required' },
                 { status: 400 }
+            )
+        }
+
+        // Get client info
+        const ip = getClientIP(request)
+        const userAgent = getUserAgent(request)
+
+        // Check how many accounts exist from this IP
+        const existingAccountsFromIP = await IPTracking.countDocuments({ ip_address: ip })
+
+        if (existingAccountsFromIP >= MAX_ACCOUNTS_PER_IP) {
+            return NextResponse.json(
+                { message: 'Maximum account limit reached from your network. Contact admin if you need assistance.' },
+                { status: 403 }
             )
         }
 
@@ -35,12 +52,12 @@ export async function POST(request) {
             name,
             email,
             password: hashedPassword,
+            ip_address: ip,
+            user_agent: userAgent,
             role: 'user'
         })
 
-        // Track IP
-        const ip = getClientIP(request)
-        const userAgent = getUserAgent(request)
+        // Track IP for multi-account prevention
         try {
             await IPTracking.create({
                 user: newUser._id,
@@ -48,7 +65,8 @@ export async function POST(request) {
                 user_agent: userAgent
             })
         } catch (e) {
-            // ignore
+            // ignore tracking errors
+            console.error('IP tracking failed:', e)
         }
 
         // Prepare response data

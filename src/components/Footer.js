@@ -7,7 +7,7 @@ export default function Footer() {
     const socialLinks = [
         {
             icon: Facebook,
-            href: 'https://facebook.com/englishcolonyuos',
+            href: 'https://www.facebook.com/share/1HJJEaHNna/',
             label: 'Facebook',
             className: 'icon-facebook'
         },
@@ -45,9 +45,20 @@ export default function Footer() {
                 </div>
 
                 {/* Copyright */}
-                <div className="text-center">
+                <div className="text-center space-y-1">
                     <p className="text-sm text-primary-300/60">
                         © 2026 English Colony UOS
+                    </p>
+                    <p className="text-xs text-primary-300/40">
+                        Developed by{' '}
+                        <Link
+                            href="https://t.me/listkiss"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary-400 hover:text-primary-300 transition-colors"
+                        >
+                            Shahadat Hassan
+                        </Link>
                     </p>
                 </div>
             </div>
