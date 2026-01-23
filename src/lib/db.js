@@ -1,4 +1,5 @@
 import mysql from 'mysql2/promise'
+import { logError, logInfo } from './logger'
 
 // Parse password handling special characters
 const password = process.env.DB_PASSWORD?.replace(/^["']|["']$/g, '') || 'u191858297_english_colony_users#S'
@@ -12,6 +13,11 @@ const dbConfig = {
   connectionLimit: 5,
   queueLimit: 0,
   connectTimeout: 10000,
+  ...(process.env.DB_SSL === 'true' && {
+    ssl: {
+      rejectUnauthorized: false
+    }
+  })
 }
 
 let pool = null
@@ -24,8 +30,10 @@ export async function getConnection() {
       const conn = await pool.getConnection()
       conn.release()
       console.log('Database connected successfully')
+      logInfo('DB', 'Connected successfully')
     } catch (error) {
       console.error('Database connection error:', error.message)
+      logError('DB_CONNECTION_FAIL', error)
       pool = null
       throw error
     }
@@ -40,6 +48,7 @@ export async function query(sql, params = []) {
     return results
   } catch (error) {
     console.error('Query error:', error.message)
+    logError('DB_QUERY_FAIL', { message: error.message, sql })
     throw error
   }
 }
