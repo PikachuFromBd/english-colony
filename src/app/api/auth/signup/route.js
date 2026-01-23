@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server'
 import { hashPassword, generateToken } from '@/lib/auth'
-import { query, getClientIP, getUserAgent, checkIPLimit, trackIP } from '@/lib/db'
+import { dbConnect, getClientIP, getUserAgent } from '@/lib/db'
+import User from '@/models/User'
+import IPTracking from '@/models/IPTracking'
+import { logError } from '@/lib/logger'
 
 export async function POST(request) {
     try {
+        await dbConnect()
         const body = await request.json()
         const { name, email, password } = body
 
@@ -15,73 +19,57 @@ export async function POST(request) {
             )
         }
 
-        if (password.length < 6) {
-            return NextResponse.json(
-                { message: 'Password must be at least 6 characters' },
-                { status: 400 }
-            )
-        }
-
-        // Get client info
-        const ip = getClientIP(request)
-        const userAgent = getUserAgent(request)
-
-        // Check IP limit
-        const ipLimited = await checkIPLimit(ip)
-        if (ipLimited) {
-            return NextResponse.json(
-                { message: 'Too many accounts from this device. Please contact support.' },
-                { status: 403 }
-            )
-        }
-
         // Check if user exists
-        const existingUsers = await query('SELECT id FROM users WHERE email = ?', [email])
-        if (existingUsers.length > 0) {
+        const existingUser = await User.findOne({ email })
+        if (existingUser) {
             return NextResponse.json(
                 { message: 'Email already registered' },
                 { status: 400 }
             )
         }
 
-        // Hash password and create user
+        // Create user
         const hashedPassword = await hashPassword(password)
 
-        const result = await query(
-            `INSERT INTO users (name, email, password, ip_address, user_agent) VALUES (?, ?, ?, ?, ?)`,
-            [name, email, hashedPassword, ip, userAgent]
-        )
-
-        const userId = result.insertId
-
-        // Track IP
-        await trackIP(userId, ip, userAgent)
-
-        // Get created user
-        const newUser = {
-            id: userId,
+        const newUser = await User.create({
             name,
             email,
-            profileImage: null,
-            batchNumber: null,
-            batchType: null,
-            contact: null,
-            bloodGroup: null,
-            address: null,
-            socialLinks: [],
+            password: hashedPassword,
+            role: 'user'
+        })
+
+        // Track IP
+        const ip = getClientIP(request)
+        const userAgent = getUserAgent(request)
+        try {
+            await IPTracking.create({
+                user: newUser._id,
+                ip_address: ip,
+                user_agent: userAgent
+            })
+        } catch (e) {
+            // ignore
         }
 
-        // Generate token
-        const token = generateToken(newUser)
+        // Prepare response data
+        const userData = {
+            id: newUser._id.toString(),
+            name: newUser.name,
+            email: newUser.email,
+            role: newUser.role
+        }
+
+        const token = generateToken(userData)
 
         return NextResponse.json({
             message: 'Account created successfully',
             token,
-            user: newUser
-        })
+            user: userData
+        }, { status: 201 })
 
     } catch (error) {
         console.error('Signup error:', error)
+        logError('Signup API Error', error)
         return NextResponse.json(
             { message: 'Server error. Please try again.' },
             { status: 500 }

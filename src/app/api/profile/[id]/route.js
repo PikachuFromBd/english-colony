@@ -1,32 +1,29 @@
 import { NextResponse } from 'next/server'
 import { getUserFromRequest } from '@/lib/auth'
-import { query } from '@/lib/db'
+import { dbConnect } from '@/lib/db'
+import User from '@/models/User'
 import { writeFile, mkdir } from 'fs/promises'
 import path from 'path'
+import { logError } from '@/lib/logger'
 
 export async function GET(request, { params }) {
     try {
+        await dbConnect()
         const userId = params.id
 
         // Fetch user from database
-        const users = await query(
-            `SELECT id, name, profile_image, batch_number, batch_type, contact, blood_group, address, social_links 
-       FROM users WHERE id = ?`,
-            [userId]
-        )
+        const user = await User.findById(userId)
 
-        if (users.length === 0) {
+        if (!user) {
             return NextResponse.json(
                 { message: 'User not found' },
                 { status: 404 }
             )
         }
 
-        const user = users[0]
-
         return NextResponse.json({
             user: {
-                id: user.id,
+                id: user._id.toString(),
                 name: user.name,
                 profileImage: user.profile_image,
                 batchNumber: user.batch_number,
@@ -34,11 +31,12 @@ export async function GET(request, { params }) {
                 contact: user.contact,
                 bloodGroup: user.blood_group,
                 address: user.address,
-                socialLinks: user.social_links ? JSON.parse(user.social_links) : [],
+                socialLinks: user.social_links || [], // Already an array in Mongoose
             }
         })
     } catch (error) {
         console.error('Profile fetch error:', error)
+        logError('Profile API GET Error', error)
         return NextResponse.json(
             { message: 'Failed to fetch profile' },
             { status: 500 }
@@ -48,6 +46,7 @@ export async function GET(request, { params }) {
 
 export async function PUT(request, { params }) {
     try {
+        await dbConnect()
         const user = getUserFromRequest(request)
         if (!user) {
             return NextResponse.json(
@@ -59,7 +58,7 @@ export async function PUT(request, { params }) {
         const userId = params.id
 
         // Only allow users to update their own profile
-        if (user.id !== parseInt(userId)) {
+        if (user.id !== userId) {
             return NextResponse.json(
                 { message: 'Unauthorized' },
                 { status: 403 }
@@ -95,40 +94,43 @@ export async function PUT(request, { params }) {
             imagePath = profileImage
         }
 
-        // Update database
-        await query(
-            `UPDATE users SET 
-        name = ?,
-        batch_number = ?,
-        batch_type = ?,
-        contact = ?,
-        blood_group = ?,
-        address = ?,
-        social_links = ?
-        ${imagePath ? ', profile_image = ?' : ''}
-       WHERE id = ?`,
-            imagePath
-                ? [name, batchNumber || null, batchType || null, contact || null, bloodGroup || null, address || null, JSON.stringify(socialLinks || []), imagePath, userId]
-                : [name, batchNumber || null, batchType || null, contact || null, bloodGroup || null, address || null, JSON.stringify(socialLinks || []), userId]
-        )
+        // Update database (Mongoose)
+        const updatedUser = await User.findByIdAndUpdate(userId, {
+            name,
+            batch_number: batchNumber || null,
+            batch_type: batchType || null,
+            contact: contact || null,
+            blood_group: bloodGroup || null,
+            address: address || null,
+            social_links: socialLinks || [],
+            ...(imagePath && { profile_image: imagePath })
+        }, { new: true }) // Return updated doc
+
+        if (!updatedUser) {
+            return NextResponse.json(
+                { message: 'User not found' },
+                { status: 404 }
+            )
+        }
 
         return NextResponse.json({
             message: 'Profile updated successfully',
             user: {
-                id: parseInt(userId),
-                name,
-                profileImage: imagePath || profileImage,
-                batchNumber,
-                batchType,
-                contact,
-                bloodGroup,
-                address,
-                socialLinks,
+                id: updatedUser._id.toString(),
+                name: updatedUser.name,
+                profileImage: updatedUser.profile_image,
+                batchNumber: updatedUser.batch_number,
+                batchType: updatedUser.batch_type,
+                contact: updatedUser.contact,
+                bloodGroup: updatedUser.blood_group,
+                address: updatedUser.address,
+                socialLinks: updatedUser.social_links,
             }
         })
 
     } catch (error) {
         console.error('Profile update error:', error)
+        logError('Profile API PUT Error', error)
         return NextResponse.json(
             { message: 'Failed to update profile' },
             { status: 500 }

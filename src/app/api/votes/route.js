@@ -1,20 +1,45 @@
 import { NextResponse } from 'next/server'
 import { getUserFromRequest } from '@/lib/auth'
-import { query, getClientIP } from '@/lib/db'
+import { dbConnect } from '@/lib/db'
+import Vote from '@/models/Vote'
+import { logError } from '@/lib/logger'
+
+export async function GET(request) {
+    try {
+        await dbConnect()
+        const user = getUserFromRequest(request)
+
+        if (!user) {
+            return NextResponse.json({ votes: [] })
+        }
+
+        // Find videos the user has voted for
+        const votes = await Vote.find({ user: user.id })
+
+        return NextResponse.json({
+            votes: votes.map(v => v.video_id)
+        })
+
+    } catch (error) {
+        console.error('Votes check error:', error)
+        logError('Votes API GET Error', error)
+        return NextResponse.json({ votes: [] })
+    }
+}
 
 export async function POST(request) {
     try {
+        await dbConnect()
         const user = getUserFromRequest(request)
         if (!user) {
             return NextResponse.json(
-                { message: 'Please login to vote' },
+                { message: 'Not authenticated' },
                 { status: 401 }
             )
         }
 
         const body = await request.json()
         const { videoId } = body
-        const ip = getClientIP(request)
 
         if (!videoId) {
             return NextResponse.json(
@@ -24,62 +49,43 @@ export async function POST(request) {
         }
 
         // Check if already voted
-        const existingVotes = await query(
-            'SELECT id FROM votes WHERE user_id = ? AND video_id = ?',
-            [user.id, videoId]
-        )
+        const existingVote = await Vote.findOne({
+            user: user.id,
+            video_id: parseInt(videoId)
+        })
 
-        if (existingVotes.length > 0) {
+        if (existingVote) {
             return NextResponse.json(
                 { message: 'You have already voted for this video' },
                 { status: 400 }
             )
         }
 
-        // Add vote
-        await query(
-            'INSERT INTO votes (user_id, video_id, ip_address) VALUES (?, ?, ?)',
-            [user.id, videoId, ip]
-        )
-
-        // Get new vote count
-        const voteCount = await query(
-            'SELECT COUNT(*) as count FROM votes WHERE video_id = ?',
-            [videoId]
-        )
+        // Create vote
+        await Vote.create({
+            user: user.id,
+            video_id: parseInt(videoId)
+        })
 
         return NextResponse.json({
-            message: 'Vote recorded successfully',
-            voted: true,
-            voteCount: voteCount[0].count
+            message: 'Vote recorded',
+            voted: true
         })
 
     } catch (error) {
-        console.error('Vote error:', error)
-        return NextResponse.json(
-            { message: 'Failed to record vote. Please try again.' },
-            { status: 500 }
-        )
-    }
-}
-
-export async function GET(request) {
-    try {
-        const user = getUserFromRequest(request)
-        if (!user) {
-            return NextResponse.json({ votes: [] })
+        // Handle duplicate key error explicitly (race conditions)
+        if (error.code === 11000) {
+            return NextResponse.json(
+                { message: 'You have already voted for this video' },
+                { status: 400 }
+            )
         }
 
-        const userVotes = await query(
-            'SELECT video_id FROM votes WHERE user_id = ?',
-            [user.id]
+        console.error('Vote error:', error)
+        logError('Votes API POST Error', error)
+        return NextResponse.json(
+            { message: 'Failed to vote' },
+            { status: 500 }
         )
-
-        return NextResponse.json({
-            votes: userVotes.map(v => v.video_id)
-        })
-    } catch (error) {
-        console.error('Get votes error:', error)
-        return NextResponse.json({ votes: [] })
     }
 }

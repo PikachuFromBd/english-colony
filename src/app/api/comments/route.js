@@ -1,58 +1,56 @@
 import { NextResponse } from 'next/server'
 import { getUserFromRequest } from '@/lib/auth'
-import { query, getClientIP } from '@/lib/db'
+import { dbConnect } from '@/lib/db'
+import Comment from '@/models/Comment'
+import User from '@/models/User'
+import { logError } from '@/lib/logger'
 
 export async function GET(request) {
     try {
+        await dbConnect()
         const { searchParams } = new URL(request.url)
-        const videoId = parseInt(searchParams.get('videoId'))
+        const videoId = searchParams.get('videoId')
 
         if (!videoId) {
             return NextResponse.json({ comments: [] })
         }
 
-        const comments = await query(`
-      SELECT 
-        c.id,
-        c.content,
-        c.created_at,
-        c.user_id,
-        u.name as userName
-      FROM comments c
-      JOIN users u ON c.user_id = u.id
-      WHERE c.video_id = ?
-      ORDER BY c.created_at DESC
-      LIMIT 50
-    `, [videoId])
+        // Fetch comments and populate user details
+        const comments = await Comment.find({ video_id: parseInt(videoId) })
+            .populate('user', 'name') // Populate name from User model
+            .sort({ created_at: -1 }) // Newest first
 
-        return NextResponse.json({
-            comments: comments.map(c => ({
-                id: c.id,
-                userId: c.user_id,
-                user: c.userName,
-                text: c.content,
-                time: formatTimeAgo(c.created_at)
-            }))
-        })
+        // Format for frontend
+        const formattedComments = comments.map(c => ({
+            id: c._id.toString(),
+            text: c.content,
+            user: c.user ? c.user.name : 'Unknown User',
+            userId: c.user ? c.user._id.toString() : null, // For profile linking
+            time: new Date(c.created_at).toLocaleDateString(), // Simple formatting
+        }))
+
+        return NextResponse.json({ comments: formattedComments })
+
     } catch (error) {
-        console.error('Get comments error:', error)
+        console.error('Comments fetch error:', error)
+        logError('Comments API GET Error', error)
         return NextResponse.json({ comments: [] })
     }
 }
 
 export async function POST(request) {
     try {
+        await dbConnect()
         const user = getUserFromRequest(request)
         if (!user) {
             return NextResponse.json(
-                { message: 'Please login to comment' },
+                { message: 'Not authenticated' },
                 { status: 401 }
             )
         }
 
         const body = await request.json()
         const { videoId, content } = body
-        const ip = getClientIP(request)
 
         if (!videoId || !content) {
             return NextResponse.json(
@@ -61,46 +59,33 @@ export async function POST(request) {
             )
         }
 
-        // Add comment
-        const result = await query(
-            'INSERT INTO comments (user_id, video_id, content, ip_address) VALUES (?, ?, ?, ?)',
-            [user.id, videoId, content, ip]
-        )
+        // Create comment
+        const newComment = await Comment.create({
+            user: user.id, // Auth middleware returns decoded token with id
+            video_id: parseInt(videoId),
+            content
+        })
 
-        const newComment = {
-            id: result.insertId,
-            userId: user.id,
-            user: user.name,
-            text: content,
-            time: 'Just now'
-        }
+        // Populate user details for immediate display
+        await newComment.populate('user', 'name')
 
         return NextResponse.json({
-            message: 'Comment added successfully',
-            comment: newComment
+            message: 'Comment added',
+            comment: {
+                id: newComment._id.toString(),
+                text: newComment.content,
+                user: newComment.user.name,
+                userId: newComment.user._id.toString(),
+                time: new Date(newComment.created_at).toLocaleDateString()
+            }
         })
 
     } catch (error) {
-        console.error('Comment error:', error)
+        console.error('Comment add error:', error)
+        logError('Comments API POST Error', error)
         return NextResponse.json(
-            { message: 'Failed to add comment. Please try again.' },
+            { message: 'Failed to add comment' },
             { status: 500 }
         )
     }
-}
-
-function formatTimeAgo(date) {
-    const now = new Date()
-    const past = new Date(date)
-    const diffMs = now - past
-    const diffMins = Math.floor(diffMs / 60000)
-    const diffHours = Math.floor(diffMins / 60)
-    const diffDays = Math.floor(diffHours / 24)
-
-    if (diffMins < 1) return 'Just now'
-    if (diffMins < 60) return `${diffMins} min ago`
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
-    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
-
-    return past.toLocaleDateString()
 }

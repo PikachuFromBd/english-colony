@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server'
 import { comparePassword, generateToken } from '@/lib/auth'
-import { query, getClientIP, getUserAgent, trackIP } from '@/lib/db'
+import { dbConnect, getClientIP, getUserAgent } from '@/lib/db'
+import User from '@/models/User'
+import IPTracking from '@/models/IPTracking'
+import { logError } from '@/lib/logger'
 
 export async function POST(request) {
     try {
+        await dbConnect()
         const body = await request.json()
         const { email, password } = body
 
@@ -19,17 +23,15 @@ export async function POST(request) {
         const ip = getClientIP(request)
         const userAgent = getUserAgent(request)
 
-        // Find user
-        const users = await query('SELECT * FROM users WHERE email = ?', [email])
+        // Find user (include password for check)
+        const user = await User.findOne({ email }).select('+password')
 
-        if (users.length === 0) {
+        if (!user) {
             return NextResponse.json(
                 { message: 'Invalid email or password' },
                 { status: 401 }
             )
         }
-
-        const user = users[0]
 
         // Check if blocked
         if (user.is_blocked) {
@@ -49,11 +51,20 @@ export async function POST(request) {
         }
 
         // Track IP
-        await trackIP(user.id, ip, userAgent)
+        try {
+            await IPTracking.create({
+                user: user._id,
+                ip_address: ip,
+                user_agent: userAgent
+            })
+        } catch (e) {
+            // Ignore tracking errors
+            console.error('Tracking failed', e)
+        }
 
-        // Prepare user data (without password)
+        // Prepare user data (remove password)
         const userData = {
-            id: user.id,
+            id: user._id.toString(), // Mongoose _id is an object
             name: user.name,
             email: user.email,
             profileImage: user.profile_image,
@@ -62,7 +73,8 @@ export async function POST(request) {
             contact: user.contact,
             bloodGroup: user.blood_group,
             address: user.address,
-            socialLinks: user.social_links ? JSON.parse(user.social_links) : [],
+            socialLinks: user.social_links || [],
+            role: user.role
         }
 
         // Generate token
@@ -76,6 +88,7 @@ export async function POST(request) {
 
     } catch (error) {
         console.error('Login error:', error)
+        logError('Login API Error', error)
         return NextResponse.json(
             { message: 'Server error. Please try again.' },
             { status: 500 }

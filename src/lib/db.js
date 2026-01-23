@@ -1,59 +1,56 @@
-import mysql from 'mysql2/promise'
+import mongoose from 'mongoose'
 import { logError, logInfo } from './logger'
 
-// Parse password handling special characters
-const password = process.env.DB_PASSWORD?.replace(/^["']|["']$/g, '') || 'u191858297_english_colony_users#S'
+const MONGODB_URI = process.env.MONGODB_URI
 
-const dbConfig = {
-  host: process.env.DB_HOST || 'srv2051.hstgr.io',
-  user: process.env.DB_USER || 'u191858297_users',
-  password: password,
-  database: process.env.DB_NAME || 'u191858297_english_colony',
-  waitForConnections: true,
-  connectionLimit: 5,
-  queueLimit: 0,
-  connectTimeout: 10000,
-  ...(process.env.DB_SSL === 'true' && {
-    ssl: {
-      rejectUnauthorized: false
-    }
-  })
+if (!MONGODB_URI) {
+  // Fallback for build time or error
+  console.warn('Please define the MONGODB_URI environment variable')
 }
 
-let pool = null
+/**
+ * Global is used here to maintain a cached connection across hot reloads
+ * in development. This prevents connections growing exponentially
+ * during API Route usage.
+ */
+let cached = global.mongoose
 
-export async function getConnection() {
-  if (!pool) {
-    try {
-      pool = mysql.createPool(dbConfig)
-      // Test connection
-      const conn = await pool.getConnection()
-      conn.release()
-      console.log('Database connected successfully')
-      logInfo('DB', 'Connected successfully')
-    } catch (error) {
-      console.error('Database connection error:', error.message)
-      logError('DB_CONNECTION_FAIL', error)
-      pool = null
-      throw error
-    }
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null }
+}
+
+export async function dbConnect() {
+  if (cached.conn) {
+    return cached.conn
   }
-  return pool
-}
 
-export async function query(sql, params = []) {
+  if (!cached.promise) {
+    const opts = {
+      bufferCommands: false,
+    }
+
+    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
+      console.log('MongoDB Connected Successfully')
+      logInfo('DB', 'MongoDB Connected Successfully')
+      return mongoose
+    }).catch(err => {
+      console.error('MongoDB Connection Error:', err)
+      logError('DB_CONN_ERR', err)
+      throw err
+    })
+  }
+
   try {
-    const connection = await getConnection()
-    const [results] = await connection.execute(sql, params)
-    return results
-  } catch (error) {
-    console.error('Query error:', error.message)
-    logError('DB_QUERY_FAIL', { message: error.message, sql })
-    throw error
+    cached.conn = await cached.promise
+  } catch (e) {
+    cached.promise = null
+    throw e
   }
+
+  return cached.conn
 }
 
-// Get client IP address
+// Helper for client IP (same as before)
 export function getClientIP(request) {
   const forwarded = request.headers.get('x-forwarded-for')
   const realIP = request.headers.get('x-real-ip')
@@ -66,34 +63,6 @@ export function getClientIP(request) {
   return '127.0.0.1'
 }
 
-// Get user agent
 export function getUserAgent(request) {
   return request.headers.get('user-agent') || 'Unknown'
-}
-
-// Check if IP has too many accounts
-export async function checkIPLimit(ip, limit = 3) {
-  try {
-    const result = await query(
-      'SELECT COUNT(DISTINCT user_id) as count FROM ip_tracking WHERE ip_address = ?',
-      [ip]
-    )
-    return result[0].count >= limit
-  } catch (error) {
-    console.error('IP check error:', error.message)
-    return false // Allow on error to not block registration
-  }
-}
-
-// Track IP for user
-export async function trackIP(userId, ip, userAgent, fingerprint = null) {
-  try {
-    await query(
-      'INSERT INTO ip_tracking (user_id, ip_address, user_agent, device_fingerprint) VALUES (?, ?, ?, ?)',
-      [userId, ip, userAgent, fingerprint]
-    )
-  } catch (error) {
-    console.error('IP tracking error:', error.message)
-    // Don't throw - this is not critical
-  }
 }
