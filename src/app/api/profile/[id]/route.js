@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server'
 import { getUserFromRequest } from '@/lib/auth'
 import { dbConnect } from '@/lib/db'
 import User from '@/models/User'
-import { writeFile, mkdir } from 'fs/promises'
-import path from 'path'
 import { logError } from '@/lib/logger'
 
 export async function GET(request, { params }) {
@@ -47,7 +45,7 @@ export async function GET(request, { params }) {
                 contact: displayContact,
                 bloodGroup: user.blood_group,
                 address: user.address,
-                socialLinks: user.social_links || [], // Already an array in Mongoose
+                socialLinks: user.social_links || [],
             }
         })
     } catch (error) {
@@ -84,34 +82,11 @@ export async function PUT(request, { params }) {
         const body = await request.json()
         const { name, batchNumber, batchType, contact, bloodGroup, address, socialLinks, profileImage } = body
 
-        // Handle profile image upload if it's a base64 string
-        let imagePath = null
-        if (profileImage && profileImage.startsWith('data:image')) {
-            // Extract base64 data
-            const matches = profileImage.match(/^data:image\/([a-zA-Z]+);base64,(.+)$/)
-            if (matches) {
-                const ext = matches[1]
-                const base64Data = matches[2]
-                const buffer = Buffer.from(base64Data, 'base64')
-
-                // Create filename with user ID
-                const filename = `profile_${userId}_${Date.now()}.${ext}`
-                const uploadDir = path.join(process.cwd(), 'public', 'images')
-
-                // Ensure directory exists
-                await mkdir(uploadDir, { recursive: true })
-
-                // Write file
-                await writeFile(path.join(uploadDir, filename), buffer)
-                imagePath = `/images/${filename}`
-            }
-        } else if (profileImage && !profileImage.startsWith('data:')) {
-            // Keep existing path if it's already a URL
-            imagePath = profileImage
-        }
-
-        // Update database (Mongoose)
-        const updatedUser = await User.findByIdAndUpdate(userId, {
+        // --- VERCEL COMPATIBLE IMAGE HANDLING ---
+        // Instead of writing to a file (fs), we store the Base64 string directly in MongoDB.
+        // The frontend already sends the image as "data:image/png;base64,..."
+        
+        const updateData = {
             name,
             batch_number: batchNumber || null,
             batch_type: batchType || null,
@@ -119,8 +94,15 @@ export async function PUT(request, { params }) {
             blood_group: bloodGroup || null,
             address: address || null,
             social_links: socialLinks || [],
-            ...(imagePath && { profile_image: imagePath })
-        }, { new: true }) // Return updated doc
+        }
+
+        // Only update profile_image if a new one is provided
+        if (profileImage) {
+            updateData.profile_image = profileImage
+        }
+
+        // Update database
+        const updatedUser = await User.findByIdAndUpdate(userId, updateData, { new: true })
 
         if (!updatedUser) {
             return NextResponse.json(
