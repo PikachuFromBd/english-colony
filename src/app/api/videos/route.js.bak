@@ -1,42 +1,17 @@
 import { NextResponse } from 'next/server'
 import { dbConnectWithRetry } from '@/lib/db'
+import Video from '@/models/Video' // New model
 import Vote from '@/models/Vote'
 import { logError } from '@/lib/logger'
 
-// ⚠️ KEEP THIS DATA: This is the "Master List" of your videos.
-// Since you don't have a 'Videos' table in your database, this array is required
-// to tell the frontend what the titles and URLs are.
-const videosData = [
-    {
-        id: 1,
-        title: '16th Batch Promo',
-        description: '',
-        url: 'https://shahadathassan.cyou/videos/16th%20promo.mp4',
-        m3u8Proxy: '/api/hls-proxy?video=16th%20promo', // Ensure this matches your frontend expectations
-    },
-    {
-        id: 2,
-        title: '18th Batch Promo',
-        description: 'What is going to happen on January 31? ...', // Truncated for brevity, put full text if needed
-        url: 'https://shahadathassan.cyou/videos/IMG_0399.MOV',
-        m3u8Proxy: '/api/hls-proxy?video=IMG_0399',
-    },
-    {
-        id: 3,
-        title: '17th Batch Promo',
-        description: 'This is simply Dramatic... This is innovative.',
-        url: 'https://shahadathassan.cyou/videos/IMG_3237.MP4',
-        m3u8Proxy: '/api/hls-proxy?video=IMG_3237',
-    },
-]
-
 export async function GET() {
     try {
-        // 1. Connect to Database
         await dbConnectWithRetry(3)
 
-        // 2. Aggregate Votes from MongoDB
-        // This asks DB: "Group all votes by video_id and count them"
+        // 1. Fetch Video Details from Database (No longer hardcoded!)
+        const videos = await Video.find({}).sort({ id: 1 }).lean()
+
+        // 2. Fetch Vote Counts
         let voteCounts = []
         try {
             voteCounts = await Vote.aggregate([
@@ -49,31 +24,26 @@ export async function GET() {
             ])
         } catch (aggError) {
             console.error('Vote aggregation error:', aggError)
-            // If aggregation fails, return 0 votes but still load the videos
-            voteCounts = []
         }
 
-        // 3. Create a Lookup Map
-        // Turns array into: { 1: 50, 2: 120, 3: 10 }
+        // 3. Create Vote Map
         const voteMap = {}
         voteCounts.forEach(v => {
             voteMap[v._id] = v.count || 0
         })
 
-        // 4. Combine Static Data + DB Counts
-        const videosWithVotes = videosData.map(video => ({
+        // 4. Merge Details + Votes
+        const videosWithVotes = videos.map(video => ({
             ...video,
-            // If DB has a count, use it. Otherwise 0.
+            // Convert _id to string if needed, or keep 'id' property
             votes: voteMap[video.id] || 0 
         }))
 
-        // 5. Return the merged data
         return NextResponse.json({
             videos: videosWithVotes
         }, {
             headers: {
-                // Critical: Tell browsers NOT to cache this so refresh shows new votes
-                'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+                'Cache-Control': 'no-store, no-cache, must-revalidate',
                 'Pragma': 'no-cache',
                 'Expires': '0'
             }
@@ -82,9 +52,6 @@ export async function GET() {
     } catch (error) {
         console.error('Videos fetch error:', error)
         logError('Videos API GET Error', error)
-
-        // Fallback: Return videos with 0 votes so the page still loads even if DB crashes
-        const fallbackVideos = videosData.map(v => ({ ...v, votes: 0 }))
-        return NextResponse.json({ videos: fallbackVideos })
+        return NextResponse.json({ videos: [] }, { status: 500 })
     }
 }
