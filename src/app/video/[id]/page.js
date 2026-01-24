@@ -257,14 +257,25 @@ export default function VideoPlayerPage() {
             const data = await res.json()
 
             if (res.ok) {
-                // Update vote count from response if available
-                if (data.voteCount !== undefined) {
+                // Update vote count from response (this is the source of truth)
+                if (data.voteCount !== undefined && data.voteCount !== null) {
                     setVoteCount(data.voteCount)
+                } else {
+                    // Fallback: increment locally if count not in response
+                    setVoteCount(prev => prev + 1)
                 }
-                // Refetch votes from server to ensure consistency
-                await fetchVotes(token)
+                // Mark as voted
+                setHasVoted(true)
+                // Refetch votes from server after a short delay to ensure DB consistency
+                setTimeout(async () => {
+                    await fetchVotes(token)
+                }, 500)
                 showToast('Vote recorded! Thank you!', 'success')
             } else {
+                // If already voted, update count from response
+                if (data.voteCount !== undefined && data.voteCount !== null) {
+                    setVoteCount(data.voteCount)
+                }
                 showToast(data.message || 'Failed to vote', 'error')
             }
         } catch (error) {

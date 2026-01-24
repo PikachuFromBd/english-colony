@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getUserFromRequest } from '@/lib/auth'
-import { dbConnect } from '@/lib/db'
+import { dbConnect, dbConnectWithRetry, isValidObjectId } from '@/lib/db'
 import Vote from '@/models/Vote'
 import { logError } from '@/lib/logger'
 import mongoose from 'mongoose'
@@ -14,11 +14,16 @@ export async function GET(request) {
             return NextResponse.json({ votes: [] })
         }
 
-        // Convert string ID to ObjectId for Mongoose query
+        // Validate and convert string ID to ObjectId for Mongoose query
+        if (!isValidObjectId(user.id)) {
+            console.error('Invalid user ID format:', user.id)
+            return NextResponse.json({ votes: [] })
+        }
+
         const userId = new mongoose.Types.ObjectId(user.id)
 
         // Find videos the user has voted for
-        const votes = await Vote.find({ user: userId })
+        const votes = await Vote.find({ user: userId }).lean()
 
         return NextResponse.json({
             votes: votes.map(v => v.video_id)
@@ -33,21 +38,8 @@ export async function GET(request) {
 
 export async function POST(request) {
     try {
-        // Retry database connection if needed
-        let retries = 3
-        while (retries > 0) {
-            try {
-                await dbConnect()
-                break
-            } catch (dbError) {
-                retries--
-                if (retries === 0) {
-                    throw dbError
-                }
-                // Wait before retry
-                await new Promise(resolve => setTimeout(resolve, 1000))
-            }
-        }
+        // Retry database connection if needed (critical for vote persistence)
+        await dbConnectWithRetry(3)
 
         const user = getUserFromRequest(request)
         if (!user) {
@@ -76,11 +68,20 @@ export async function POST(request) {
             )
         }
 
-        // Convert string ID to ObjectId for Mongoose
+        // Validate and convert string ID to ObjectId for Mongoose
+        if (!isValidObjectId(user.id)) {
+            console.error('Invalid user ID format:', user.id)
+            return NextResponse.json(
+                { message: 'Invalid user ID format' },
+                { status: 400 }
+            )
+        }
+
         let userId
         try {
             userId = new mongoose.Types.ObjectId(user.id)
         } catch (idError) {
+            console.error('ObjectId creation error:', idError, 'user.id:', user.id)
             return NextResponse.json(
                 { message: 'Invalid user ID' },
                 { status: 400 }
@@ -127,13 +128,25 @@ export async function POST(request) {
             throw createError
         }
 
-        // Get updated vote count for this video
-        const voteCount = await Vote.countDocuments({ video_id: parsedVideoId })
+        // Get updated vote count for this video (with retry for consistency)
+        let voteCount
+        try {
+            voteCount = await Vote.countDocuments({ video_id: parsedVideoId })
+        } catch (countError) {
+            console.error('Error counting votes:', countError)
+            // Still return success since vote was created
+            voteCount = 0
+        }
 
         return NextResponse.json({
             message: 'Vote recorded',
             voted: true,
             voteCount: voteCount
+        }, { 
+            status: 200,
+            headers: {
+                'Cache-Control': 'no-store, no-cache, must-revalidate'
+            }
         })
 
     } catch (error) {

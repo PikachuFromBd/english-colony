@@ -1,26 +1,40 @@
 import { NextResponse } from 'next/server'
-import { dbConnect } from '@/lib/db'
+import { dbConnect, dbConnectWithRetry } from '@/lib/db'
 import Vote from '@/models/Vote'
 import { logError } from '@/lib/logger'
 
 export async function GET() {
     try {
-        await dbConnect()
+        // Use retry for critical vote count endpoint
+        await dbConnectWithRetry(3)
 
-        // Aggregate votes by video_id
-        const voteCounts = await Vote.aggregate([
-            {
-                $group: {
-                    _id: '$video_id',
-                    count: { $sum: 1 }
+        // Aggregate votes by video_id with better error handling
+        let voteCounts = []
+        try {
+            voteCounts = await Vote.aggregate([
+                {
+                    $group: {
+                        _id: '$video_id',
+                        count: { $sum: 1 }
+                    }
                 }
-            }
-        ])
+            ])
+        } catch (aggError) {
+            console.error('Vote aggregation error:', aggError)
+            // Fallback to countDocuments if aggregation fails
+            const videos = [1, 2, 3]
+            voteCounts = await Promise.all(
+                videos.map(async (videoId) => ({
+                    _id: videoId,
+                    count: await Vote.countDocuments({ video_id: videoId }).catch(() => 0)
+                }))
+            )
+        }
 
         // Convert aggregation result to map for easy lookup
         const voteMap = {}
         voteCounts.forEach(v => {
-            voteMap[v._id] = v.count
+            voteMap[v._id] = v.count || 0
         })
 
         // Static video data (Source of Truth)
@@ -74,6 +88,10 @@ Presented by: 18th Batch | Department of English | University of Scholars`,
 
         return NextResponse.json({
             videos: videosWithVotes
+        }, {
+            headers: {
+                'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'
+            }
         })
     } catch (error) {
         console.error('Videos fetch error:', error)

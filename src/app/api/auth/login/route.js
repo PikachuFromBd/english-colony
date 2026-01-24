@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server'
 import { comparePassword, generateToken } from '@/lib/auth'
-import { dbConnect, getClientIP, getUserAgent } from '@/lib/db'
+import { dbConnectWithRetry, getClientIP, getUserAgent } from '@/lib/db'
 import User from '@/models/User'
 import IPTracking from '@/models/IPTracking'
 import { logError } from '@/lib/logger'
 
 export async function POST(request) {
     try {
-        await dbConnect()
+        // Retry database connection if needed (for redeploy scenarios)
+        await dbConnectWithRetry(3)
+
         const body = await request.json()
         const { email, password } = body
 

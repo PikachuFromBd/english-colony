@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { hashPassword, generateToken } from '@/lib/auth'
-import { dbConnect, getClientIP, getUserAgent } from '@/lib/db'
+import { dbConnectWithRetry, getClientIP, getUserAgent } from '@/lib/db'
 import User from '@/models/User'
 import IPTracking from '@/models/IPTracking'
 import { logError } from '@/lib/logger'
@@ -10,7 +10,7 @@ const MAX_ACCOUNTS_PER_IP = 2
 
 export async function POST(request) {
     try {
-        await dbConnect()
+        await dbConnectWithRetry(3)
         const body = await request.json()
         const { name, email, password } = body
 
