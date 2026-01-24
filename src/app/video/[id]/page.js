@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { Heart, MessageCircle, ChevronDown, ChevronUp, Send, ArrowLeft, Trash2, Settings } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Heart, MessageCircle, ChevronDown, ChevronUp, Send, ArrowLeft, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useParams } from 'next/navigation'
 import Header from '@/components/Header'
@@ -16,11 +16,12 @@ export default function VideoPlayerPage() {
     // --- STATE MANAGEMENT ---
     const videoId = parseInt(params.id)
     
-    // CHANGED: We now use state for videos (fetched from DB) instead of a hardcoded list
+    // Video Data State
     const [videos, setVideos] = useState([]) 
     const [video, setVideo] = useState(null)
     const [loading, setLoading] = useState(true)
     
+    // UI State
     const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false)
     const [hasVoted, setHasVoted] = useState(false)
     const [voteCount, setVoteCount] = useState(0)
@@ -35,16 +36,10 @@ export default function VideoPlayerPage() {
     const [newComment, setNewComment] = useState('')
     const [commentLoading, setCommentLoading] = useState(false)
     
-    // Player State
+    // Vote Processing State
     const [voteLoading, setVoteLoading] = useState(false)
-    const [quality, setQuality] = useState('hd')
-    const [showQualityMenu, setShowQualityMenu] = useState(false)
-    const [hlsSupported, setHlsSupported] = useState(false)
 
-    const videoRef = useRef(null)
-    const hlsRef = useRef(null)
-
-    // --- HELPER: PARSE JWT ---
+    // --- HELPER: JWT PARSER ---
     const parseJwt = (token) => {
         try {
             const base64Url = token.split('.')[1]
@@ -58,7 +53,25 @@ export default function VideoPlayerPage() {
         }
     }
 
-    // --- EFFECT 1: INITIAL DATA FETCH ---
+    // --- HELPER: GENERATE PLAYER URL ---
+    // This turns "https://.../videos/16th%20promo.mp4" 
+    // into "https://shahadathassan.cyou/player.php?v=16th%20promo"
+    const getPlayerSource = (videoUrl) => {
+        if (!videoUrl) return ''
+        try {
+            // 1. Get the last part: "16th%20promo.mp4"
+            const filenameWithExt = videoUrl.split('/').pop() 
+            // 2. Remove ".mp4" or ".MOV": "16th%20promo"
+            const filename = filenameWithExt.split('.').slice(0, -1).join('.') 
+            // 3. Return the new player URL
+            return `https://shahadathassan.cyou/player.php?v=${filename}`
+        } catch (e) {
+            console.error('Error parsing video URL', e)
+            return ''
+        }
+    }
+
+    // --- EFFECT: INITIAL DATA FETCH ---
     useEffect(() => {
         const init = async () => {
             const storedToken = localStorage.getItem('token')
@@ -71,14 +84,13 @@ export default function VideoPlayerPage() {
             }
 
             try {
-                // CHANGED: Fetch ALL videos from DB (replaces hardcoded list)
-                // This ensures vote counts are fresh from the database
+                // 1. Fetch from DB
                 const res = await fetch('/api/videos', { cache: 'no-store' })
                 const data = await res.json()
                 const dbVideos = data.videos || []
                 setVideos(dbVideos)
 
-                // 2. Find the current video based on URL ID
+                // 2. Find Current Video
                 const currentVideo = dbVideos.find(v => v.id === videoId) || dbVideos[0]
                 setVideo(currentVideo)
 
@@ -86,7 +98,7 @@ export default function VideoPlayerPage() {
                     setVoteCount(currentVideo.votes || 0)
                 }
 
-                // 3. Check if User Voted
+                // 3. Check User Vote Status
                 if (storedToken) {
                     const voteRes = await fetch('/api/votes', {
                         headers: { 'Authorization': `Bearer ${storedToken}` }
@@ -107,54 +119,7 @@ export default function VideoPlayerPage() {
         fetchComments()
     }, [videoId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-    // --- EFFECT 2: VIDEO PLAYER SETUP (HLS) ---
-    useEffect(() => {
-        if (!video || !videoRef.current) return
-
-        if (hlsRef.current) {
-            hlsRef.current.destroy()
-            hlsRef.current = null
-        }
-
-        const loadVideo = async () => {
-            const videoElement = videoRef.current
-
-            // Logic for Low Quality (HLS) vs HD (MP4)
-            if (quality === 'low' && video.m3u8Proxy) {
-                try {
-                    const Hls = (await import('hls.js')).default
-                    if (Hls.isSupported()) {
-                        setHlsSupported(true)
-                        const hls = new Hls()
-                        hlsRef.current = hls
-                        hls.loadSource(video.m3u8Proxy)
-                        hls.attachMedia(videoElement)
-                    } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
-                        setHlsSupported(true)
-                        videoElement.src = video.m3u8Proxy
-                    } else {
-                        // Fallback to HD if HLS fails
-                        setQuality('hd')
-                        videoElement.src = video.url
-                    }
-                } catch (e) {
-                    console.error(e)
-                    setQuality('hd')
-                    videoElement.src = video.url
-                }
-            } else {
-                // HD Direct URL
-                videoElement.src = video.url
-            }
-        }
-        loadVideo()
-
-        return () => {
-            if (hlsRef.current) hlsRef.current.destroy()
-        }
-    }, [video, quality])
-
-    // --- FUNCTIONS ---
+    // --- API FUNCTIONS ---
     
     const fetchComments = async () => {
         try {
@@ -247,7 +212,7 @@ export default function VideoPlayerPage() {
         }
     }
 
-    // --- LOADING STATE ---
+    // --- RENDER HELPERS ---
     if (loading) {
         return (
             <div className="min-h-screen bg-black flex items-center justify-center">
@@ -256,7 +221,6 @@ export default function VideoPlayerPage() {
         )
     }
 
-    // --- ERROR STATE ---
     if (!video) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center text-white bg-black">
@@ -281,49 +245,21 @@ export default function VideoPlayerPage() {
                     </Link>
                 </div>
 
-                {/* Video Title */}
+                {/* Title */}
                 <h1 className="px-4 text-xl font-heading font-bold text-white mb-3">
                     {video.title}
                 </h1>
 
-                {/* Video Player */}
-                <div className="w-full aspect-video bg-black relative">
-                    <video
-                        ref={videoRef}
-                        controls
-                        playsInline
-                        controlsList="nodownload"
-                        className="w-full h-full object-contain"
-                        style={{ backgroundColor: '#000' }}
+                {/* --- NEW PLAYER (IFRAME) --- */}
+                <div className="w-full aspect-video bg-black relative rounded-xl overflow-hidden shadow-lg mx-auto max-w-5xl">
+                    <iframe 
+                        src={getPlayerSource(video.url)}
+                        className="w-full h-full"
+                        frameBorder="0"
+                        allowFullScreen
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        title={video.title}
                     />
-
-                    {/* Quality Selector */}
-                    <div className="absolute top-3 right-3 z-10">
-                        <button
-                            onClick={() => setShowQualityMenu(!showQualityMenu)}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-black/70 text-white text-sm hover:bg-black/90 transition-colors"
-                        >
-                            <Settings className="w-4 h-4" />
-                            <span>{quality === 'hd' ? 'HD' : 'Low'}</span>
-                        </button>
-
-                        {showQualityMenu && (
-                            <div className="absolute top-full right-0 mt-1 bg-black/90 rounded-lg overflow-hidden min-w-[100px]">
-                                <button
-                                    onClick={() => { setQuality('hd'); setShowQualityMenu(false) }}
-                                    className={`w-full px-4 py-2 text-left text-sm hover:bg-white/10 transition-colors ${quality === 'hd' ? 'text-primary-400' : 'text-white'}`}
-                                >
-                                    HD (Original)
-                                </button>
-                                <button
-                                    onClick={() => { setQuality('low'); setShowQualityMenu(false) }}
-                                    className={`w-full px-4 py-2 text-left text-sm hover:bg-white/10 transition-colors ${quality === 'low' ? 'text-primary-400' : 'text-white'}`}
-                                >
-                                    Low (Faster)
-                                </button>
-                            </div>
-                        )}
-                    </div>
                 </div>
 
                 {/* Description */}
@@ -343,7 +279,7 @@ export default function VideoPlayerPage() {
                     </div>
                 </div>
 
-                {/* Vote and Comment Buttons */}
+                {/* Vote & Comment Stats */}
                 <div className="px-4 pb-4 flex gap-3">
                     <button
                         onClick={handleVote}
@@ -377,7 +313,6 @@ export default function VideoPlayerPage() {
                         Comments
                     </h2>
 
-                    {/* Add Comment Form */}
                     <form onSubmit={handleComment} className="mb-6">
                         <div className="flex gap-2">
                             <input
@@ -398,7 +333,6 @@ export default function VideoPlayerPage() {
                         </div>
                     </form>
 
-                    {/* Comments List */}
                     <div className="space-y-4">
                         {commentLoading ? (
                             <div className="flex justify-center py-4">
