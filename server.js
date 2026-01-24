@@ -4,7 +4,7 @@ const next = require('next')
 const { initBot } = require('./src/lib/bot') // Import Bot
 
 const dev = process.env.NODE_ENV !== 'production'
-const hostname = 'localhost'
+const hostname = process.env.HOSTNAME || '0.0.0.0' // Use 0.0.0.0 for production hosting
 const port = process.env.PORT || 3000
 
 const app = next({ dev, hostname, port })
@@ -27,14 +27,21 @@ app.prepare().then(() => {
         } catch (err) {
             console.error('Error occurred handling', req.url, err)
             res.statusCode = 500
-            res.end('internal server error')
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ 
+                error: 'Internal server error',
+                message: dev ? err.message : 'Something went wrong'
+            }))
         }
     })
         .once('error', (err) => {
-            console.error(err)
+            console.error('Server error:', err)
             process.exit(1)
         })
-        .listen(port, () => {
+        .listen(port, hostname, () => {
             console.log(`> Ready on http://${hostname}:${port}`)
         })
+}).catch((err) => {
+    console.error('Failed to start server:', err)
+    process.exit(1)
 })

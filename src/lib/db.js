@@ -21,12 +21,22 @@ if (!cached) {
 
 export async function dbConnect() {
   if (cached.conn) {
-    return cached.conn
+    // Check if connection is still alive
+    if (mongoose.connection.readyState === 1) {
+      return cached.conn
+    } else {
+      // Connection is dead, reset cache
+      cached.conn = null
+      cached.promise = null
+    }
   }
 
   if (!cached.promise) {
     const opts = {
       bufferCommands: false,
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
     }
 
     cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
@@ -36,6 +46,8 @@ export async function dbConnect() {
     }).catch(err => {
       console.error('MongoDB Connection Error:', err)
       logError('DB_CONN_ERR', err)
+      // Reset promise on error so we can retry
+      cached.promise = null
       throw err
     })
   }

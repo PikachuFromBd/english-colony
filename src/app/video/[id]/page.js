@@ -172,8 +172,20 @@ export default function VideoPlayerPage() {
 
     const fetchVotes = async (authToken) => {
         try {
-            // Get vote count from videos API
-            const res = await fetch('/api/videos')
+            // Get vote count from videos API with cache busting
+            const res = await fetch('/api/videos?' + new URLSearchParams({ 
+                _t: Date.now().toString() 
+            }), {
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache'
+                }
+            })
+            
+            if (!res.ok) {
+                throw new Error('Failed to fetch votes')
+            }
+            
             const data = await res.json()
             const currentVideo = data.videos?.find(v => v.id === videoId)
             if (currentVideo) {
@@ -182,14 +194,26 @@ export default function VideoPlayerPage() {
 
             // Check if user voted
             if (authToken) {
-                const votesRes = await fetch('/api/votes', {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
+                const votesRes = await fetch('/api/votes?' + new URLSearchParams({ 
+                    _t: Date.now().toString() 
+                }), {
+                    headers: { 
+                        'Authorization': `Bearer ${authToken}`,
+                        'Cache-Control': 'no-cache'
+                    },
+                    cache: 'no-store'
                 })
-                const votesData = await votesRes.json()
-                setHasVoted(votesData.votes?.includes(videoId))
+                
+                if (votesRes.ok) {
+                    const votesData = await votesRes.json()
+                    setHasVoted(votesData.votes?.includes(videoId) || false)
+                }
+            } else {
+                setHasVoted(false)
             }
         } catch (error) {
             console.error('Error fetching votes:', error)
+            // Don't update state on error to preserve existing values
         }
     }
 
@@ -233,8 +257,12 @@ export default function VideoPlayerPage() {
             const data = await res.json()
 
             if (res.ok) {
-                setHasVoted(true)
-                setVoteCount(prev => prev + 1)
+                // Update vote count from response if available
+                if (data.voteCount !== undefined) {
+                    setVoteCount(data.voteCount)
+                }
+                // Refetch votes from server to ensure consistency
+                await fetchVotes(token)
                 showToast('Vote recorded! Thank you!', 'success')
             } else {
                 showToast(data.message || 'Failed to vote', 'error')

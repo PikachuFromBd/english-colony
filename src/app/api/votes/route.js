@@ -33,7 +33,22 @@ export async function GET(request) {
 
 export async function POST(request) {
     try {
-        await dbConnect()
+        // Retry database connection if needed
+        let retries = 3
+        while (retries > 0) {
+            try {
+                await dbConnect()
+                break
+            } catch (dbError) {
+                retries--
+                if (retries === 0) {
+                    throw dbError
+                }
+                // Wait before retry
+                await new Promise(resolve => setTimeout(resolve, 1000))
+            }
+        }
+
         const user = getUserFromRequest(request)
         if (!user) {
             return NextResponse.json(
@@ -52,31 +67,73 @@ export async function POST(request) {
             )
         }
 
-        // Convert string ID to ObjectId for Mongoose
-        const userId = new mongoose.Types.ObjectId(user.id)
-
-        // Check if already voted
-        const existingVote = await Vote.findOne({
-            user: userId,
-            video_id: parseInt(videoId)
-        })
-
-        if (existingVote) {
+        // Validate videoId is a number
+        const parsedVideoId = parseInt(videoId)
+        if (isNaN(parsedVideoId)) {
             return NextResponse.json(
-                { message: 'You have already voted for this video' },
+                { message: 'Invalid video ID' },
                 { status: 400 }
             )
         }
 
-        // Create vote
-        await Vote.create({
+        // Convert string ID to ObjectId for Mongoose
+        let userId
+        try {
+            userId = new mongoose.Types.ObjectId(user.id)
+        } catch (idError) {
+            return NextResponse.json(
+                { message: 'Invalid user ID' },
+                { status: 400 }
+            )
+        }
+
+        // Check if already voted
+        const existingVote = await Vote.findOne({
             user: userId,
-            video_id: parseInt(videoId)
+            video_id: parsedVideoId
         })
+
+        if (existingVote) {
+            // Return current vote count even if already voted
+            const voteCount = await Vote.countDocuments({ video_id: parsedVideoId })
+            return NextResponse.json(
+                { 
+                    message: 'You have already voted for this video',
+                    voteCount: voteCount
+                },
+                { status: 400 }
+            )
+        }
+
+        // Create vote with error handling
+        let newVote
+        try {
+            newVote = await Vote.create({
+                user: userId,
+                video_id: parsedVideoId
+            })
+        } catch (createError) {
+            // Handle duplicate key error (race condition)
+            if (createError.code === 11000) {
+                const voteCount = await Vote.countDocuments({ video_id: parsedVideoId })
+                return NextResponse.json(
+                    { 
+                        message: 'You have already voted for this video',
+                        voteCount: voteCount
+                    },
+                    { status: 400 }
+                )
+            }
+            throw createError
+        }
+
+        // Get updated vote count for this video
+        const voteCount = await Vote.countDocuments({ video_id: parsedVideoId })
 
         return NextResponse.json({
             message: 'Vote recorded',
-            voted: true
+            voted: true,
+            voteCount: voteCount
         })
 
     } catch (error) {
@@ -91,7 +148,7 @@ export async function POST(request) {
         console.error('Vote error:', error)
         logError('Votes API POST Error', error)
         return NextResponse.json(
-            { message: 'Failed to vote' },
+            { message: 'Failed to vote. Please try again.' },
             { status: 500 }
         )
     }
