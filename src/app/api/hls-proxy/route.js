@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 // Proxy for HLS m3u8 files to bypass CORS
 export async function GET(request) {
     try {
