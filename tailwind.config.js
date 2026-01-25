@@ -9,17 +9,17 @@ module.exports = {
         extend: {
             colors: {
                 primary: {
-                    50: '#eff6ff',  // Very light blue (backgrounds)
-                    100: '#dbeafe',
-                    200: '#bfdbfe',
-                    300: '#93c5fd',
-                    400: '#60a5fa',
-                    500: '#3b82f6', // ✅ MAIN BUTTON COLOR (Bright Blue)
-                    600: '#2563eb', // Button Hover
-                    700: '#1d4ed8',
-                    800: '#1e40af',
-                    900: '#1e3a8a',
-                    950: '#0f172a', // ✅ WEBSITE BACKGROUND (Deep Navy/Black)
+                    50: '#f0f9ff',
+                    100: '#e0f2fe',
+                    200: '#bae6fd',
+                    300: '#7dd3fc',
+                    400: '#38bdf8', // Light Blue Accents
+                    500: '#0ea5e9', // ✅ MAIN BUTTON (Sky Blue - Very Bright)
+                    600: '#0284c7', // Hover color
+                    700: '#0369a1',
+                    800: '#075985',
+                    900: '#0c4a6e',
+                    950: '#082f49', // ✅ BACKGROUND (Deep Navy - Lighter than Black)
                 }
             },
             fontFamily: {
