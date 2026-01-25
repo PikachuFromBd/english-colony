@@ -33,8 +33,7 @@ export default function HomePage() {
 
                     {/* Description */}
                     <p className="text-primary-200/80 text-base leading-relaxed max-w-md mx-auto">
-                        English Club is a place for language learners to use English in a casual setting.
-                        Practicing your skills has never been more fun!
+                        English colony represents the harmony of English department of University of Scholars. It is known as "Colony of Harmony" and the students are called as "Mavericks"
                     </p>
                 </section>
 
