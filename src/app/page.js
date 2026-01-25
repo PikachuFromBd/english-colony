@@ -30,12 +30,12 @@ export default function HomePage() {
                     <h1 className="text-3xl font-heading font-bold gradient-text mb-4">
                         English Colony UOS
                     </h1>
-{/* Description */}
-<p className="text-primary-200/80 text-base leading-relaxed max-w-md mx-auto">
-    English colony represents the harmony of English department of University of Scholars. It is known as &quot;Colony of Harmony&quot; and the students are called as &quot;Mavericks&quot;
-</p>
-    
-    
+
+                    {/* Description */}
+                    <p className="text-primary-200/80 text-base leading-relaxed max-w-md mx-auto">
+                        English colony represents the harmony of English department of University of Scholars. It is known as &quot;Colony of Harmony&quot; and the students are called as &quot;Mavericks&quot;
+                    </p>
+                </section>
 
                 {/* Events Section */}
                 <section className="px-4 pb-12">
