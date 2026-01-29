@@ -20,12 +20,12 @@ export async function GET(request) {
 
     try {
         // Fetch all data for the dashboard
-        const users = await User.find({}).sort({ _id: -1 }).limit(50).lean()
+        const users = await User.find({}).sort({ _id: -1 }).limit(500).lean()
         
         // We need to fetch comments safely. If Comment model doesn't exist, return empty.
         let comments = []
         try {
-            comments = await Comment.find({}).sort({ createdAt: -1 }).limit(50).lean()
+            comments = await Comment.find({}).sort({ createdAt: -1 }).limit(500).lean()
         } catch (e) {
             console.log('Comment model likely missing or empty')
         }
